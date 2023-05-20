@@ -12,6 +12,7 @@ import numpy as np
 from GameAction import GameAction
 
 NUMBER_OF_DOTS = 5
+CPU_DELAY_MS = 100
 MAX_DEPTH = 2
 
 BOARD_SIZE = 600
@@ -27,29 +28,16 @@ DOT_WIDTH = 0.25 * BOARD_SIZE / NUMBER_OF_DOTS
 EDGE_WIDTH = 0.1 * BOARD_SIZE / NUMBER_OF_DOTS
 DOTS_DISTANCE = BOARD_SIZE / NUMBER_OF_DOTS
 
-CPU_DELAY_MS = 500
 LEFT_CLICK = '<Button-1>'
 
 
 class CPU:
-    """
-    An interface for CPU player.
-    """
 
     def get_action(self, game) -> GameAction:
-        """
-        Returns action based on state.
-        """
         raise NotImplementedError()
 
 
-class MinMaxCPU():
-    def __init__(self):
-        # For alpha beta pruning
-        self.ply = 5
-        self.alpha = -1000
-        self.beta = 1000
-
+class MinMaxCPU(CPU):
     def get_valid_moves(self, game):
         state = game.get_game_state()
 
@@ -68,78 +56,29 @@ class MinMaxCPU():
         shuffle(l)
         return l
 
-    def evaluation_function(self, game, player):
-        player1_score = len(np.argwhere(game.board_status == +4))
-        player2_score = len(np.argwhere(game.board_status == -4))
-        if player:
-            return (player1_score - player2_score)
-        else:
-            return (player2_score - player1_score)
-
     def get_action(self, game) -> GameAction:
         game_copy = game
-        """
-        valid_moves = self.get_valid_moves(game)
-        #move = self.minimax(game_copy, valid_moves, self.ply, True)[1]
-        """
-        move = self.alphabeta(game_copy, MAX_DEPTH)[0]
+        is_player1 = game.player1_turn
+        move = self.alphabeta(game_copy, is_player1, MAX_DEPTH)[0]
         return move
 
-    def minimax(self, game, valid_moves, ply, max_min):
-        if max_min is True:
-            best_move = (-1000000, None)
-        else:
-            best_move = (1000000, None)
-
-        if ply == 0 or len(valid_moves) == 0:
-            h = self.evaluation_function(game)
-            return h, None
-
-
-        for i in range(0, len(valid_moves)):
-            move = valid_moves.pop()
-
-            game_copy = game.get_copy()
-            valid_moves_copy = deepcopy(valid_moves)
-
-            game_copy.update_board(move.action_type, move.position)
-
-            valid_moves.insert(0, move)
-
-            h = self.evaluation_function(game_copy)
-
-            "Alpha-Beta pruning"
-            if max_min is True:
-                if h >= self.beta:
-                    return h, move
-                else:
-                    self.alpha = max(self.alpha, h)
-            else:
-                if h <= self.alpha:
-                    return h, move
-                else:
-                    self.beta = min(self.beta, h)
-
-            next_move = self.minimax(game_copy, valid_moves_copy, ply - 1, not max_min)
-
-            if max_min is True:
-                if next_move[0] > best_move[0]:
-                    best_move = (next_move[0], move)
-            else:
-                if next_move[0] < best_move[0]:
-                    best_move = (next_move[0], move)
-        return best_move
-
-    def alphabeta(self, game, depth=5, alpha=-inf, beta=inf, is_max=True, player=False, move=GameAction("row", (0,0))):
+    def alphabeta(self, game, is_player1=False, depth=5, alpha=-inf, beta=inf, is_max=True, move=GameAction("row", (0, 0))):
         children = self.get_valid_moves(game)
 
-        if len(children) == 0 or depth == 0:
+        if depth == 0 or len(children) == 0:
             player1_score = len(np.argwhere(game.board_status == -4))
-            player2_score = len(np.argwhere(game.board_status == 4))
-            if player:
-                return [move, player1_score - player2_score]
+            player2_score = len(np.argwhere(game.board_status == +4))
+            boxes_3 = len(np.argwhere(abs(game.board_status) == 3))
+            if is_max:
+                if is_player1:
+                    return [move, player1_score - player2_score - boxes_3*0.5]
+                else:
+                    return [move, player2_score - player1_score - boxes_3*0.5]
             else:
-                return [move, player2_score - player1_score]
+                if is_player1:
+                    return [move, player2_score - player1_score - boxes_3*0.5]
+                else:
+                    return [move, player1_score - player2_score - boxes_3*0.5]
 
         if is_max:
             best_move = ()
@@ -147,7 +86,7 @@ class MinMaxCPU():
             for move in children:
                 game_copy = game.get_copy()
                 turn = game_copy.update_board(move.action_type, move.position)
-                temp = self.alphabeta(game_copy, depth - 1, alpha, beta, turn, player, move)
+                temp = self.alphabeta(game_copy, not turn, depth - 1, alpha, beta, turn, move)
                 if temp[1] > best_score:
                     best_move = move
                     best_score = temp[1]
@@ -161,7 +100,7 @@ class MinMaxCPU():
             for move in children:
                 game_copy = game.get_copy()
                 turn = game_copy.update_board(move.action_type, move.position)
-                temp = self.alphabeta(game_copy, depth - 1, alpha, beta, not turn, player, move)
+                temp = self.alphabeta(game_copy, not turn, depth - 1, alpha, beta, turn, move)
                 if temp[1] < worse_score:
                     worse_move = move
                     worse_score = temp[1]
@@ -184,13 +123,13 @@ class Dots_and_Boxes:
         self.row_status = row_status
         self.board_status = board_status
         self.turntext_handle = turntext_handle
+        self.player1_starts = True
 
         if play:
             self.window = Tk()
             self.window.title('Dots_and_Boxes')
             self.canvas = Canvas(self.window, width=BOARD_SIZE, height=BOARD_SIZE)
             self.canvas.pack()
-            self.player1_starts = True
             self.refresh_board()
 
         self.cpu1 = cpu1
@@ -313,7 +252,6 @@ class Dots_and_Boxes:
                 self.board_status[y][x - 1] = (abs(self.board_status[y][x - 1]) + val) * playerModifier
                 if abs(self.board_status[y][x - 1]) == 4:
                     self.pointScored()
-
         return self.player1_turn
 
     def is_gameover(self):
@@ -348,10 +286,10 @@ class Dots_and_Boxes:
 
         if player1_score > player2_score:
             # Player 1 wins
-            text = 'Winner: Player 1 '
+            text = 'Player 1 wins'
             color = P1_COLOR
         elif player2_score > player1_score:
-            text = 'Winner: Player 2 '
+            text = 'Player 2 wins'
             color = P2_COLOR
         else:
             text = 'Its a tie'
@@ -393,20 +331,6 @@ class Dots_and_Boxes:
                                         end_x + DOT_WIDTH / 2, fill=DOT_COLOR,
                                         outline=DOT_COLOR)
 
-    def display_turn_text(self):
-        text = 'Next turn: '
-        if self.player1_turn:
-            text += 'Player1'
-            color = P1_COLOR
-        else:
-            text += 'Player2'
-            color = P2_COLOR
-
-        self.canvas.delete(self.turntext_handle)
-        self.turntext_handle = self.canvas.create_text(BOARD_SIZE - 5 * len(text),
-                                                       BOARD_SIZE - DOTS_DISTANCE / 8,
-                                                       font="cmr 15 bold", text=text, fill=color)
-
     def shade_box(self, box, color):
         start_x = DOTS_DISTANCE / 2 + box[1] * DOTS_DISTANCE + EDGE_WIDTH / 2
         start_y = DOTS_DISTANCE / 2 + box[0] * DOTS_DISTANCE + EDGE_WIDTH / 2
@@ -440,6 +364,7 @@ class Dots_and_Boxes:
 
     def update(self, valid_input, logical_position):
         if valid_input and not self.is_grid_occupied(logical_position, valid_input):
+            print(self.board_status)
             self.window.unbind(LEFT_CLICK)
             self.update_board(valid_input, logical_position)
             self.make_edge(valid_input, logical_position)
