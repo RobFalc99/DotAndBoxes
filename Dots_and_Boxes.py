@@ -1,7 +1,9 @@
 from copy import deepcopy
+from math import inf
 from tkinter import Canvas
 from tkinter.tix import Tk
 from typing import Optional
+from random import shuffle
 
 from time import sleep
 
@@ -10,6 +12,7 @@ import numpy as np
 from GameAction import GameAction
 
 NUMBER_OF_DOTS = 5
+MAX_DEPTH = 2
 
 BOARD_SIZE = 600
 SYMBOL_SIZE = (BOARD_SIZE / 3 - BOARD_SIZE / 8) / 2
@@ -24,7 +27,7 @@ DOT_WIDTH = 0.25 * BOARD_SIZE / NUMBER_OF_DOTS
 EDGE_WIDTH = 0.1 * BOARD_SIZE / NUMBER_OF_DOTS
 DOTS_DISTANCE = BOARD_SIZE / NUMBER_OF_DOTS
 
-CPU_DELAY_MS = 100
+CPU_DELAY_MS = 500
 LEFT_CLICK = '<Button-1>'
 
 
@@ -61,72 +64,51 @@ class MinMaxCPU():
             for j in range(0, len(state.col_status[i]), 1):
                 if state.col_status[i][j] == 0.:
                     valid_cols_moves.append(GameAction("col", (j, i)))
+        l = valid_rows_moves + valid_cols_moves
+        shuffle(l)
+        return l
 
-        return valid_rows_moves + valid_cols_moves
-
-    def evaluation_function(self, game):
+    def evaluation_function(self, game, player):
         player1_score = len(np.argwhere(game.board_status == +4))
         player2_score = len(np.argwhere(game.board_status == -4))
-        return (player2_score - player1_score)
+        if player:
+            return (player1_score - player2_score)
+        else:
+            return (player2_score - player1_score)
 
     def get_action(self, game) -> GameAction:
-        # Create a copy of the current board state for tree calculation
         game_copy = game
+        """
         valid_moves = self.get_valid_moves(game)
-
-        # Retrieve coordinates from minimax algorithm
-        move = self.minimax(game_copy, valid_moves, self.ply, True)[1]
-        print("FINAL MOVE")
-        print(move)
-
+        #move = self.minimax(game_copy, valid_moves, self.ply, True)[1]
+        """
+        move = self.alphabeta(game_copy, MAX_DEPTH)[0]
         return move
 
     def minimax(self, game, valid_moves, ply, max_min):
-        '''
-        This function contains the core logic regarding the minimax algorithm.
-        Parameters:
-            state - represents the current board state
-            openVectors - represents the available successors from the current state
-            ply - represents the total depth of the game tree
-            max_min - a value of True represents the AI, False represents the adversary
-        Individual successor states are created in the main loop, before recursively
-        calling the minimax algorithm to explore subsequent descendants of the tree.
-        '''
-        # The value of best_move defaults to -inf for a Max layer, and +inf for a Min Layer
         if max_min is True:
             best_move = (-1000000, None)
         else:
             best_move = (1000000, None)
 
-        # If the ply depth limit is reached or available successors are exhausted,
-        # we evaluate and return the value of the current state
         if ply == 0 or len(valid_moves) == 0:
             h = self.evaluation_function(game)
             return h, None
 
-        # Get successors
+
         for i in range(0, len(valid_moves)):
             move = valid_moves.pop()
-            # Retrieve coordinates of current successor state
 
-            # Create a deep copy of the state to be explored
             game_copy = game.get_copy()
             valid_moves_copy = deepcopy(valid_moves)
 
             game_copy.update_board(move.action_type, move.position)
 
-            # Add the coordinates back onto the openVector list, this ensures subsequent
-            # child states at the current depth can fully explore the remainder of the tree
             valid_moves.insert(0, move)
 
-            # Alpha-Beta Pruning
-            # We check the requisite value (beta on a max node, alpha on a min) before
-            # exploring the nodes children. If a violation is detected, this path returns.
             h = self.evaluation_function(game_copy)
-            print(move, end=' - ')
-            print(h)
 
-
+            "Alpha-Beta pruning"
             if max_min is True:
                 if h >= self.beta:
                     return h, move
@@ -138,22 +120,55 @@ class MinMaxCPU():
                 else:
                     self.beta = min(self.beta, h)
 
-
-            # Make a recursive call to the minimax function with the child state
-            # The goal state is back propagated up the tree upon the end of recursion,
-            # IE, when ply limit is reached or the open moves are exhausted
             next_move = self.minimax(game_copy, valid_moves_copy, ply - 1, not max_min)
 
-            # Check the score returned from the child state against the 'bestScore'
             if max_min is True:
-                # At a max level, we seek scores higher than the current max
                 if next_move[0] > best_move[0]:
                     best_move = (next_move[0], move)
             else:
-                # At a min level, we seek scores lower than the current max
                 if next_move[0] < best_move[0]:
                     best_move = (next_move[0], move)
         return best_move
+
+    def alphabeta(self, game, depth=5, alpha=-inf, beta=inf, is_max=True, player=False, move=GameAction("row", (0,0))):
+        children = self.get_valid_moves(game)
+
+        if len(children) == 0 or depth == 0:
+            player1_score = len(np.argwhere(game.board_status == -4))
+            player2_score = len(np.argwhere(game.board_status == 4))
+            if player:
+                return [move, player1_score - player2_score]
+            else:
+                return [move, player2_score - player1_score]
+
+        if is_max:
+            best_move = ()
+            best_score = -inf
+            for move in children:
+                game_copy = game.get_copy()
+                turn = game_copy.update_board(move.action_type, move.position)
+                temp = self.alphabeta(game_copy, depth - 1, alpha, beta, turn, player, move)
+                if temp[1] > best_score:
+                    best_move = move
+                    best_score = temp[1]
+                alpha = max(best_score, alpha)
+                if beta <= alpha:
+                    break
+            return [best_move, best_score]
+        else:
+            worse_move = ()
+            worse_score = inf
+            for move in children:
+                game_copy = game.get_copy()
+                turn = game_copy.update_board(move.action_type, move.position)
+                temp = self.alphabeta(game_copy, depth - 1, alpha, beta, not turn, player, move)
+                if temp[1] < worse_score:
+                    worse_move = move
+                    worse_score = temp[1]
+                beta = min(beta, worse_score)
+                if beta <= alpha:
+                    break
+            return [worse_move, worse_score]
 
 
 class Dots_and_Boxes:
@@ -292,13 +307,14 @@ class Dots_and_Boxes:
                 if abs(self.board_status[y - 1][x]) == 4:
                     self.pointScored()
 
-
         elif type == 'col':
             self.col_status[y][x] = 1
             if x >= 1:
                 self.board_status[y][x - 1] = (abs(self.board_status[y][x - 1]) + val) * playerModifier
                 if abs(self.board_status[y][x - 1]) == 4:
                     self.pointScored()
+
+        return self.player1_turn
 
     def is_gameover(self):
         return (self.row_status == 1).all() and (self.col_status == 1).all()
@@ -449,8 +465,4 @@ class Dots_and_Boxes:
 
     def cpu_turn(self, cpu: CPU):
         action = cpu.get_action(self)
-        print(self.col_status)
-        print(self.row_status)
         self.update(action.action_type, action.position)
-        print(self.col_status)
-        print(self.row_status)
