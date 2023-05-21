@@ -12,8 +12,8 @@ import numpy as np
 from GameAction import GameAction
 
 NUMBER_OF_DOTS = 5
-CPU_DELAY_MS = 100
-MAX_DEPTH = 2
+CPU_DELAY_MS = 1
+MAX_DEPTH = 4
 
 BOARD_SIZE = 600
 SYMBOL_SIZE = (BOARD_SIZE / 3 - BOARD_SIZE / 8) / 2
@@ -68,17 +68,30 @@ class MinMaxCPU(CPU):
         if depth == 0 or len(children) == 0:
             player1_score = len(np.argwhere(game.board_status == -4))
             player2_score = len(np.argwhere(game.board_status == +4))
+
+            corner_1 = sum(1 for cc in [(0, 0), (0, 3), (3, 0), (3, 3)] if abs(game.board_status[cc[0], cc[1]]) == 1)
+            corner_2 = sum(1 for cc in [(0, 0), (0, 3), (3, 0), (3, 3)] if abs(game.board_status[cc[0], cc[1]]) == 2)
+
+            boxes_2 = len(np.argwhere(abs(game.board_status) == 2))
             boxes_3 = len(np.argwhere(abs(game.board_status) == 3))
+
+            completed_boxes = len(np.argwhere(abs(game.board_status) == 4))
+            number_of_boxes = (NUMBER_OF_DOTS - 1) * (NUMBER_OF_DOTS - 1)
+            last_move = (number_of_boxes - completed_boxes) == 0
+
+
+            winning_move = last_move and (((player1_score > player2_score) and is_player1) or ((player2_score > player1_score) and not is_player1))
+
             if is_max:
                 if is_player1:
-                    return [move, player1_score - player2_score - boxes_3*0.5]
+                    return [move, player1_score*1.5 - player2_score - boxes_3*0.5 + boxes_2*0.5 + (NUMBER_OF_DOTS if winning_move else 0)]
                 else:
-                    return [move, player2_score - player1_score - boxes_3*0.5]
+                    return [move, player2_score*1.5 - player1_score - boxes_3*0.5 + boxes_2*0.5 + (NUMBER_OF_DOTS if winning_move else 0)]
             else:
                 if is_player1:
-                    return [move, player2_score - player1_score - boxes_3*0.5]
+                    return [move, player2_score*1.5 - player1_score - boxes_3*0.5 + boxes_2*0.5 - (NUMBER_OF_DOTS if winning_move else 0)]
                 else:
-                    return [move, player1_score - player2_score - boxes_3*0.5]
+                    return [move, player1_score*1.5 - player2_score - boxes_3*0.5 + boxes_2*0.5 - (NUMBER_OF_DOTS if winning_move else 0)]
 
         if is_max:
             best_move = ()
@@ -365,6 +378,7 @@ class Dots_and_Boxes:
     def update(self, valid_input, logical_position):
         if valid_input and not self.is_grid_occupied(logical_position, valid_input):
             print(self.board_status)
+
             self.window.unbind(LEFT_CLICK)
             self.update_board(valid_input, logical_position)
             self.make_edge(valid_input, logical_position)
