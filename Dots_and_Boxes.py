@@ -13,7 +13,7 @@ from GameAction import GameAction
 
 NUMBER_OF_DOTS = 5
 CPU_DELAY_MS = 1
-MAX_DEPTH = 4
+MAX_DEPTH = 1
 
 BOARD_SIZE = 600
 SYMBOL_SIZE = (BOARD_SIZE / 3 - BOARD_SIZE / 8) / 2
@@ -33,7 +33,7 @@ LEFT_CLICK = '<Button-1>'
 
 class CPU:
 
-    def get_action(self, game) -> GameAction:
+    def get_action(self, game, is_player1) -> GameAction:
         raise NotImplementedError()
 
 
@@ -56,13 +56,12 @@ class MinMaxCPU(CPU):
         shuffle(l)
         return l
 
-    def get_action(self, game) -> GameAction:
+    def get_action(self, game, is_player1) -> GameAction:
         game_copy = game
-        is_player1 = game.player1_turn
-        move = self.alphabeta(game_copy, is_player1, MAX_DEPTH)[0]
+        move = self.alphabeta(game_copy, is_player1)[0]
         return move
 
-    def alphabeta(self, game, is_player1=False, depth=5, alpha=-inf, beta=inf, is_max=True, move=GameAction("row", (0, 0))):
+    def alphabeta(self, game, is_player1=False, depth=MAX_DEPTH, alpha=-inf, beta=inf, is_max=True, move=GameAction("row", (0, 0))):
         children = self.get_valid_moves(game)
 
         if depth == 0 or len(children) == 0:
@@ -84,14 +83,9 @@ class MinMaxCPU(CPU):
 
             if is_max:
                 if is_player1:
-                    return [move, player1_score*1.5 - player2_score - boxes_3*0.5 + boxes_2*0.5 + (NUMBER_OF_DOTS if winning_move else 0)]
+                    return [move, player1_score - player2_score - boxes_3*0.5 + boxes_2*0.5 + (NUMBER_OF_DOTS if winning_move else 0)]
                 else:
-                    return [move, player2_score*1.5 - player1_score - boxes_3*0.5 + boxes_2*0.5 + (NUMBER_OF_DOTS if winning_move else 0)]
-            else:
-                if is_player1:
-                    return [move, player2_score*1.5 - player1_score - boxes_3*0.5 + boxes_2*0.5 - (NUMBER_OF_DOTS if winning_move else 0)]
-                else:
-                    return [move, player1_score*1.5 - player2_score - boxes_3*0.5 + boxes_2*0.5 - (NUMBER_OF_DOTS if winning_move else 0)]
+                    return [move, player2_score - player1_score - boxes_3*0.5 + boxes_2*0.5 + (NUMBER_OF_DOTS if winning_move else 0)]
 
         if is_max:
             best_move = ()
@@ -99,7 +93,7 @@ class MinMaxCPU(CPU):
             for move in children:
                 game_copy = game.get_copy()
                 turn = game_copy.update_board(move.action_type, move.position)
-                temp = self.alphabeta(game_copy, not turn, depth - 1, alpha, beta, turn, move)
+                temp = self.alphabeta(game_copy, is_player1, depth - 1, alpha, beta, not turn, move)
                 if temp[1] > best_score:
                     best_move = move
                     best_score = temp[1]
@@ -113,7 +107,7 @@ class MinMaxCPU(CPU):
             for move in children:
                 game_copy = game.get_copy()
                 turn = game_copy.update_board(move.action_type, move.position)
-                temp = self.alphabeta(game_copy, not turn, depth - 1, alpha, beta, turn, move)
+                temp = self.alphabeta(game_copy, is_player1, depth - 1, alpha, beta, not turn, move)
                 if temp[1] < worse_score:
                     worse_move = move
                     worse_score = temp[1]
@@ -403,5 +397,6 @@ class Dots_and_Boxes:
             self.window.after(CPU_DELAY_MS, self.cpu_turn, current_cpu)
 
     def cpu_turn(self, cpu: CPU):
-        action = cpu.get_action(self)
+        is_player1 = (cpu == self.cpu1)
+        action = cpu.get_action(self, is_player1)
         self.update(action.action_type, action.position)
