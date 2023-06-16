@@ -11,9 +11,9 @@ from GameState import GameState
 import numpy as np
 from GameAction import GameAction
 
-NUMBER_OF_DOTS = 5
+NUMBER_OF_DOTS = 11
 CPU_DELAY_MS = 1
-MAX_DEPTH = 1
+MAX_DEPTH = 2
 
 BOARD_SIZE = 600
 SYMBOL_SIZE = (BOARD_SIZE / 3 - BOARD_SIZE / 8) / 2
@@ -83,17 +83,17 @@ class MinMaxCPU(CPU):
 
             if is_max:
                 if is_player1:
-                    return [move, player1_score - player2_score - boxes_3*0.5 + boxes_2*0.5 + (NUMBER_OF_DOTS if winning_move else 0)]
+                    return [move, boxes_3*0.25 + boxes_2*0.5 + (NUMBER_OF_DOTS*3 if winning_move else 0) + player1_score - player2_score]
                 else:
-                    return [move, player2_score - player1_score - boxes_3*0.5 + boxes_2*0.5 + (NUMBER_OF_DOTS if winning_move else 0)]
+                    return [move, boxes_3*0.25 + boxes_2*0.5 + (NUMBER_OF_DOTS*3 if winning_move else 0) + player2_score - player1_score]
 
         if is_max:
             best_move = ()
             best_score = -inf
             for move in children:
                 game_copy = game.get_copy()
-                turn = game_copy.update_board(move.action_type, move.position)
-                temp = self.alphabeta(game_copy, is_player1, depth - 1, alpha, beta, not turn, move)
+                turn, point_scored = game_copy.update_board(move.action_type, move.position)
+                temp = self.alphabeta(game_copy, is_player1, depth - 1, alpha, beta, not is_max if not point_scored else is_max, move)
                 if temp[1] > best_score:
                     best_move = move
                     best_score = temp[1]
@@ -106,8 +106,8 @@ class MinMaxCPU(CPU):
             worse_score = inf
             for move in children:
                 game_copy = game.get_copy()
-                turn = game_copy.update_board(move.action_type, move.position)
-                temp = self.alphabeta(game_copy, is_player1, depth - 1, alpha, beta, not turn, move)
+                turn, point_scored = game_copy.update_board(move.action_type, move.position)
+                temp = self.alphabeta(game_copy, is_player1, depth - 1, alpha, beta, not is_max if not point_scored else is_max, move)
                 if temp[1] < worse_score:
                     worse_move = move
                     worse_score = temp[1]
@@ -259,7 +259,7 @@ class Dots_and_Boxes:
                 self.board_status[y][x - 1] = (abs(self.board_status[y][x - 1]) + val) * playerModifier
                 if abs(self.board_status[y][x - 1]) == 4:
                     self.pointScored()
-        return self.player1_turn
+        return self.player1_turn, self.pointsScored
 
     def is_gameover(self):
         return (self.row_status == 1).all() and (self.col_status == 1).all()
@@ -382,7 +382,6 @@ class Dots_and_Boxes:
             self.pointsScored = False
 
             if self.is_gameover():
-                # self.canvas.delete("all")
                 self.display_gameover()
                 self.window.bind(LEFT_CLICK, self.click)
             else:
