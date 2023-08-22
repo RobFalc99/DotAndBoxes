@@ -11,9 +11,11 @@ from GameState import GameState
 import numpy as np
 from GameAction import GameAction
 
-NUMBER_OF_DOTS = 11
-CPU_DELAY_MS = 1
-MAX_DEPTH = 2
+NUMBER_OF_DOTS = 7
+CPU_DELAY_MS = 10
+MAX_DEPTH = 3
+
+CHAIN_POINTS = 12
 
 BOARD_SIZE = 600
 SYMBOL_SIZE = (BOARD_SIZE / 3 - BOARD_SIZE / 8) / 2
@@ -31,13 +33,75 @@ DOTS_DISTANCE = BOARD_SIZE / NUMBER_OF_DOTS
 LEFT_CLICK = '<Button-1>'
 
 
+def get_valid_neighbors(cell, board, rows, cols):
+    x, y = cell
+    neighbors = []
+    if abs(board[x][y]) == 4:
+        return neighbors
+    if y < len(board[0]) - 1 and abs(board[x][y + 1]) <= 3 and cols[x][y + 1] != 1:
+        neighbors.append((x, y + 1))
+    if y > 0 and abs(board[x][y - 1]) <= 3 and cols[x][y] != 1:
+        neighbors.append((x, y - 1))
+    if x < len(board) - 1 and abs(board[x + 1][y]) <= 3 and rows[x + 1][y] != 1:
+        neighbors.append((x + 1, y))
+    if x > 0 and abs(board[x][y]) <= 3 and rows[x][y] != 1:
+        neighbors.append((x - 1, y))
+    return neighbors
+
+
+def dfs(cell, board, rows, cols, visited, chain):
+    visited.add(cell)
+    chain.append(cell)
+
+    neighbors = get_valid_neighbors(cell, board, rows, cols)
+
+    if len(neighbors) == 0 or set(neighbors) <= visited:
+        return True
+
+    for neighbor in neighbors:
+        if neighbor not in visited:
+            x, y = neighbor
+            if abs(board[x][y]) == 4:
+                return True
+            elif abs(board[x][y]) <= 3:
+                if dfs(neighbor, board, rows, cols, visited, chain):
+                    return True
+
+
+def find_chains(board, rows, cols):
+    chains = []
+    visited = set()
+
+    for row in range(len(board)):
+        for col in range(len(board[0])):
+            cell = (row, col)
+            if abs(board[row][col]) <= 3 and cell not in visited:
+                chain = []
+                if dfs(cell, board, rows, cols, visited, chain):
+                    chains.append(chain)
+
+    return chains
+
+
+def find_long_chains(board, rows, cols):
+    return [lst for lst in find_chains(board, rows, cols) if len(lst) > 3]
+
+
+def check_no_plus_minus_4(matrix):
+    for row in matrix:
+        for value in row:
+            if abs(value) == 4:
+                return False
+    return True
+
+
 class CPU:
 
-    def get_action(self, game, is_player1) -> GameAction:
+    def get_action(self, game, is_player1, player_1_stars) -> GameAction:
         raise NotImplementedError()
 
 
-class MinMaxCPU(CPU):
+class AlphaBetaCPU(CPU):
     def get_valid_moves(self, game):
         state = game.get_game_state()
 
@@ -56,36 +120,26 @@ class MinMaxCPU(CPU):
         shuffle(l)
         return l
 
-    def get_action(self, game, is_player1) -> GameAction:
+    def get_action(self, game, is_player1, player_1_stars) -> GameAction:
         game_copy = game
-        move = self.alphabeta(game_copy, is_player1)[0]
+        move = self.alphabeta(game_copy, is_player1, player_1_stars)[0]
         return move
 
-    def alphabeta(self, game, is_player1=False, depth=MAX_DEPTH, alpha=-inf, beta=inf, is_max=True, move=GameAction("row", (0, 0))):
+    def evaluate_goodness(self, game, is_player1, player_1_stars):
+        player1_score = len(np.argwhere(game.board_status == -4))
+        player2_score = len(np.argwhere(game.board_status == +4))
+
+        if is_player1:
+            return player1_score - player2_score
+        else:
+            return player2_score - player1_score
+
+    def alphabeta(self, game, is_player1=False, player_1_stars=True, depth=MAX_DEPTH, alpha=-inf, beta=inf, is_max=True,
+                  move=GameAction("row", (0, 0))):
         children = self.get_valid_moves(game)
 
         if depth == 0 or len(children) == 0:
-            player1_score = len(np.argwhere(game.board_status == -4))
-            player2_score = len(np.argwhere(game.board_status == +4))
-
-            corner_1 = sum(1 for cc in [(0, 0), (0, 3), (3, 0), (3, 3)] if abs(game.board_status[cc[0], cc[1]]) == 1)
-            corner_2 = sum(1 for cc in [(0, 0), (0, 3), (3, 0), (3, 3)] if abs(game.board_status[cc[0], cc[1]]) == 2)
-
-            boxes_2 = len(np.argwhere(abs(game.board_status) == 2))
-            boxes_3 = len(np.argwhere(abs(game.board_status) == 3))
-
-            completed_boxes = len(np.argwhere(abs(game.board_status) == 4))
-            number_of_boxes = (NUMBER_OF_DOTS - 1) * (NUMBER_OF_DOTS - 1)
-            last_move = (number_of_boxes - completed_boxes) == 0
-
-
-            winning_move = last_move and (((player1_score > player2_score) and is_player1) or ((player2_score > player1_score) and not is_player1))
-
-            if is_max:
-                if is_player1:
-                    return [move, boxes_3*0.25 + boxes_2*0.5 + (NUMBER_OF_DOTS*3 if winning_move else 0) + player1_score - player2_score]
-                else:
-                    return [move, boxes_3*0.25 + boxes_2*0.5 + (NUMBER_OF_DOTS*3 if winning_move else 0) + player2_score - player1_score]
+            return [move, self.evaluate_goodness(game, is_player1, player_1_stars)]
 
         if is_max:
             best_move = ()
@@ -93,7 +147,9 @@ class MinMaxCPU(CPU):
             for move in children:
                 game_copy = game.get_copy()
                 turn, point_scored = game_copy.update_board(move.action_type, move.position)
-                temp = self.alphabeta(game_copy, is_player1, depth - 1, alpha, beta, not is_max if not point_scored else is_max, move)
+                temp = self.alphabeta(game_copy, is_player1, player_1_stars,
+                                      depth - 1, alpha, beta,
+                                      is_max if point_scored else not is_max, move)
                 if temp[1] > best_score:
                     best_move = move
                     best_score = temp[1]
@@ -107,7 +163,9 @@ class MinMaxCPU(CPU):
             for move in children:
                 game_copy = game.get_copy()
                 turn, point_scored = game_copy.update_board(move.action_type, move.position)
-                temp = self.alphabeta(game_copy, is_player1, depth - 1, alpha, beta, not is_max if not point_scored else is_max, move)
+                temp = self.alphabeta(game_copy, is_player1 if point_scored else not is_player1, player_1_stars,
+                                      depth - 1, alpha, beta,
+                                      is_max if point_scored else not is_max, move)
                 if temp[1] < worse_score:
                     worse_move = move
                     worse_score = temp[1]
@@ -115,6 +173,122 @@ class MinMaxCPU(CPU):
                 if beta <= alpha:
                     break
             return [worse_move, worse_score]
+
+
+class E1_CPU(AlphaBetaCPU):
+    def evaluate_goodness(self, game, is_player1, player_1_stars):
+        player1_score = len(np.argwhere(game.board_status == -4))
+        player2_score = len(np.argwhere(game.board_status == +4))
+
+        completed_boxes = len(np.argwhere(abs(game.board_status) == 4))
+        number_of_boxes = (NUMBER_OF_DOTS - 1) * (NUMBER_OF_DOTS - 1)
+        last_move = (number_of_boxes - completed_boxes) == 0
+        winning_move = last_move and (((player1_score > player2_score) and is_player1) or (
+                (player2_score > player1_score) and not is_player1))
+        winning_move_score = (NUMBER_OF_DOTS * 3 if winning_move else 0)
+
+        if is_player1:
+            return player1_score - player2_score
+        else:
+            return player2_score - player1_score
+
+
+class E2_CPU(AlphaBetaCPU):
+    def evaluate_goodness(self, game, is_player1, player_1_stars):
+        player1_score = len(np.argwhere(game.board_status == -4))
+        player2_score = len(np.argwhere(game.board_status == +4))
+
+        completed_boxes = len(np.argwhere(abs(game.board_status) == 4))
+        number_of_boxes = (NUMBER_OF_DOTS - 1) * (NUMBER_OF_DOTS - 1)
+        last_move = (number_of_boxes - completed_boxes) == 0
+        winning_move = last_move and (((player1_score > player2_score) and is_player1) or (
+                (player2_score > player1_score) and not is_player1))
+        winning_move_score = (NUMBER_OF_DOTS * 3 if winning_move else 0)
+
+        chain_points = 0
+
+        long_chains = find_long_chains(game.board_status, game.row_status, game.col_status)
+        number_of_long_chains = len(long_chains)
+
+        if game.is_end_game() and check_no_plus_minus_4(game.board_status):
+
+            if NUMBER_OF_DOTS % 2 == 1:
+                if (is_player1 and player_1_stars) or (not is_player1 and not player_1_stars):
+                    if number_of_long_chains % 2 == 1:
+                        chain_points = +CHAIN_POINTS
+                    else:
+                        chain_points = -CHAIN_POINTS
+                else:
+                    if number_of_long_chains % 2 == 0:
+                        chain_points = +CHAIN_POINTS
+                    else:
+                        chain_points = -CHAIN_POINTS
+            else:
+                if (is_player1 and player_1_stars) or (not is_player1 and not player_1_stars):
+                    if number_of_long_chains % 2 == 0:
+                        chain_points = +CHAIN_POINTS
+                    else:
+                        chain_points = -CHAIN_POINTS
+                else:
+                    if number_of_long_chains % 2 == 1:
+                        chain_points = +CHAIN_POINTS
+                    else:
+                        chain_points = -CHAIN_POINTS
+
+        if is_player1:
+            return player1_score - player2_score + chain_points
+        else:
+            return player2_score - player1_score + chain_points
+
+class E3_CPU(AlphaBetaCPU):
+    def evaluate_goodness(self, game, is_player1, player_1_stars):
+        player1_score = len(np.argwhere(game.board_status == -4))
+        player2_score = len(np.argwhere(game.board_status == +4))
+
+        completed_boxes = len(np.argwhere(abs(game.board_status) == 4))
+        number_of_boxes = (NUMBER_OF_DOTS - 1) * (NUMBER_OF_DOTS - 1)
+        last_move = (number_of_boxes - completed_boxes) == 0
+        winning_move = last_move and (((player1_score > player2_score) and is_player1) or (
+                (player2_score > player1_score) and not is_player1))
+        winning_move_score = (NUMBER_OF_DOTS * 3 if winning_move else 0)
+
+        chain_points = 0
+
+        long_chains = find_long_chains(game.board_status, game.row_status, game.col_status)
+        even_points = sum(len(even_chain) for even_chain in long_chains[::2])
+        odd_points = sum(len(odd_chain) for odd_chain in long_chains[1::2])
+        number_of_long_chains = len(long_chains)
+
+        if game.is_end_game() and check_no_plus_minus_4(game.board_status):
+
+            if NUMBER_OF_DOTS % 2 == 1:
+                if (is_player1 and player_1_stars) or (not is_player1 and not player_1_stars):
+                    if number_of_long_chains % 2 == 1:
+                        chain_points = +odd_points - even_points
+                    else:
+                        chain_points = -odd_points + even_points
+                else:
+                    if number_of_long_chains % 2 == 0:
+                        chain_points = +even_points - odd_points
+                    else:
+                        chain_points = -even_points + odd_points
+            else:
+                if (is_player1 and player_1_stars) or (not is_player1 and not player_1_stars):
+                    if number_of_long_chains % 2 == 0:
+                        chain_points = +odd_points - even_points
+                    else:
+                        chain_points = -odd_points + even_points
+                else:
+                    if number_of_long_chains % 2 == 1:
+                        chain_points = +even_points - odd_points
+                    else:
+                        chain_points = -even_points + odd_points
+
+        if is_player1:
+            return player1_score - player2_score + chain_points
+        else:
+            return player2_score - player1_score + chain_points
+
 
 
 class Dots_and_Boxes:
@@ -294,12 +468,15 @@ class Dots_and_Boxes:
         if player1_score > player2_score:
             # Player 1 wins
             text = 'Player 1 wins'
+            print(1)
             color = P1_COLOR
         elif player2_score > player1_score:
             text = 'Player 2 wins'
+            print(2)
             color = P2_COLOR
         else:
             text = 'Its a tie'
+            print('X')
             color = 'gray'
 
         self.canvas.delete("all")
@@ -319,6 +496,8 @@ class Dots_and_Boxes:
         score_text = 'Click to play again \n'
         self.canvas.create_text(BOARD_SIZE / 2, 15 * BOARD_SIZE / 16, font="cmr 20 bold", fill="gray",
                                 text=score_text)
+
+        self.play_again()
 
     def refresh_board(self):
         for i in range(NUMBER_OF_DOTS):
@@ -344,6 +523,23 @@ class Dots_and_Boxes:
         end_x = start_x + DOTS_DISTANCE - EDGE_WIDTH
         end_y = start_y + DOTS_DISTANCE - EDGE_WIDTH
         self.canvas.create_rectangle(start_x, start_y, end_x, end_y, fill=color, outline='')
+
+    def is_end_game(self):
+        game = self
+        for i in range(0, len(game.board_status), 1):
+            for j in range(0, len(game.board_status), 1):
+                if game.board_status[i][j] == 0:
+                    return False
+                if abs(game.board_status[i][j]) == 2 or abs(game.board_status[i][j]) == 4 or (
+                        (abs(game.board_status[i][j] == 1) or abs(game.board_status[i][j] == 0)) and (
+                        i < NUMBER_OF_DOTS - 2 and abs(game.board_status[i + 1][j]) == 2) or (
+                                i > 0 and abs(game.board_status[i - 1][j]) == 2) or (
+                                j < NUMBER_OF_DOTS - 2 and abs(game.board_status[i][j + 1]) == 2) or (
+                                j > 0 and abs(game.board_status[i][j - 1]) == 2)):
+                    pass
+                else:
+                    return False
+        return True
 
     def display_turn_text(self):
         text = 'Next turn: '
@@ -371,7 +567,6 @@ class Dots_and_Boxes:
 
     def update(self, valid_input, logical_position):
         if valid_input and not self.is_grid_occupied(logical_position, valid_input):
-            print(self.board_status)
 
             self.window.unbind(LEFT_CLICK)
             self.update_board(valid_input, logical_position)
@@ -397,5 +592,5 @@ class Dots_and_Boxes:
 
     def cpu_turn(self, cpu: CPU):
         is_player1 = (cpu == self.cpu1)
-        action = cpu.get_action(self, is_player1)
+        action = cpu.get_action(self, is_player1, self.player1_starts)
         self.update(action.action_type, action.position)

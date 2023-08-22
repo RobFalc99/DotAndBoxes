@@ -9,5 +9,5 @@ if __name__ == "__main__":
     PvB mode: game_instance = Dots_and_Boxes(None, cpuName()) or game_instance = Dots_and_Boxes(cpuName(), None)
     BvB mode: game_instance = Dots_and_Boxes(cpuName(), cpuName())
     """
-    game_instance = Dots_and_Boxes(MinMaxCPU(), MinMaxCPU())
+    game_instance = Dots_and_Boxes(E1_CPU(), E1_CPU())
     game_instance.mainloop()
