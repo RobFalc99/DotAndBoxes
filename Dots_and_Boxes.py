@@ -4,6 +4,7 @@ from tkinter import Canvas
 from tkinter.tix import Tk
 from typing import Optional
 from random import shuffle
+import time
 
 from time import sleep
 
@@ -11,11 +12,10 @@ from GameState import GameState
 import numpy as np
 from GameAction import GameAction
 
-NUMBER_OF_DOTS = 7
-CPU_DELAY_MS = 10
-MAX_DEPTH = 3
-
-CHAIN_POINTS = 12
+loop = False
+NUMBER_OF_DOTS = 6
+CPU_DELAY_MS = 1
+MAX_DEPTH = 1
 
 BOARD_SIZE = 600
 SYMBOL_SIZE = (BOARD_SIZE / 3 - BOARD_SIZE / 8) / 2
@@ -32,6 +32,7 @@ DOTS_DISTANCE = BOARD_SIZE / NUMBER_OF_DOTS
 
 LEFT_CLICK = '<Button-1>'
 
+start = time.time()
 
 def get_valid_neighbors(cell, board, rows, cols):
     x, y = cell
@@ -84,15 +85,25 @@ def find_chains(board, rows, cols):
 
 
 def find_long_chains(board, rows, cols):
-    return [lst for lst in find_chains(board, rows, cols) if len(lst) > 3]
+    return sorted([lst for lst in find_chains(board, rows, cols) if len(lst) > 3], key=len, reverse=True)
 
 
-def check_no_plus_minus_4(matrix):
+def check_single_4(matrix):
+    count = 0
     for row in matrix:
         for value in row:
             if abs(value) == 4:
-                return False
-    return True
+                count += 1
+    return count == 1
+
+
+def check_no_4(matrix):
+    count = 0
+    for row in matrix:
+        for value in row:
+            if abs(value) == 4:
+                count += 1
+    return count == 0
 
 
 class CPU:
@@ -102,6 +113,10 @@ class CPU:
 
 
 class AlphaBetaCPU(CPU):
+
+    def __init__(self, max_depth=None):
+        if max_depth is not None:
+            MAX_DEPTH = max_depth
     def get_valid_moves(self, game):
         state = game.get_game_state()
 
@@ -138,6 +153,8 @@ class AlphaBetaCPU(CPU):
                   move=GameAction("row", (0, 0))):
         children = self.get_valid_moves(game)
 
+        print(MAX_DEPTH)
+
         if depth == 0 or len(children) == 0:
             return [move, self.evaluate_goodness(game, is_player1, player_1_stars)]
 
@@ -147,7 +164,7 @@ class AlphaBetaCPU(CPU):
             for move in children:
                 game_copy = game.get_copy()
                 turn, point_scored = game_copy.update_board(move.action_type, move.position)
-                temp = self.alphabeta(game_copy, is_player1, player_1_stars,
+                temp = self.alphabeta(game_copy, is_player1 if point_scored else not is_player1, player_1_stars,
                                       depth - 1, alpha, beta,
                                       is_max if point_scored else not is_max, move)
                 if temp[1] > best_score:
@@ -176,16 +193,13 @@ class AlphaBetaCPU(CPU):
 
 
 class E1_CPU(AlphaBetaCPU):
+
+    def __init__(self, max_depth=None):
+        if max_depth is not None:
+            MAX_DEPTH = max_depth
     def evaluate_goodness(self, game, is_player1, player_1_stars):
         player1_score = len(np.argwhere(game.board_status == -4))
         player2_score = len(np.argwhere(game.board_status == +4))
-
-        completed_boxes = len(np.argwhere(abs(game.board_status) == 4))
-        number_of_boxes = (NUMBER_OF_DOTS - 1) * (NUMBER_OF_DOTS - 1)
-        last_move = (number_of_boxes - completed_boxes) == 0
-        winning_move = last_move and (((player1_score > player2_score) and is_player1) or (
-                (player2_score > player1_score) and not is_player1))
-        winning_move_score = (NUMBER_OF_DOTS * 3 if winning_move else 0)
 
         if is_player1:
             return player1_score - player2_score
@@ -194,6 +208,10 @@ class E1_CPU(AlphaBetaCPU):
 
 
 class E2_CPU(AlphaBetaCPU):
+
+    def __init__(self, chain_points):
+        self.CHAIN_POINTS = chain_points*(NUMBER_OF_DOTS-1)*(NUMBER_OF_DOTS-1)
+
     def evaluate_goodness(self, game, is_player1, player_1_stars):
         player1_score = len(np.argwhere(game.board_status == -4))
         player2_score = len(np.argwhere(game.board_status == +4))
@@ -210,85 +228,61 @@ class E2_CPU(AlphaBetaCPU):
         long_chains = find_long_chains(game.board_status, game.row_status, game.col_status)
         number_of_long_chains = len(long_chains)
 
-        if game.is_end_game() and check_no_plus_minus_4(game.board_status):
+        if check_single_4(game.board_status):
 
             if NUMBER_OF_DOTS % 2 == 1:
                 if (is_player1 and player_1_stars) or (not is_player1 and not player_1_stars):
                     if number_of_long_chains % 2 == 1:
-                        chain_points = +CHAIN_POINTS
-                    else:
-                        chain_points = -CHAIN_POINTS
+                        chain_points = +self.CHAIN_POINTS
                 else:
                     if number_of_long_chains % 2 == 0:
-                        chain_points = +CHAIN_POINTS
-                    else:
-                        chain_points = -CHAIN_POINTS
+                        chain_points = +self.CHAIN_POINTS
             else:
                 if (is_player1 and player_1_stars) or (not is_player1 and not player_1_stars):
                     if number_of_long_chains % 2 == 0:
-                        chain_points = +CHAIN_POINTS
-                    else:
-                        chain_points = -CHAIN_POINTS
+                        chain_points = +self.CHAIN_POINTS
+
                 else:
                     if number_of_long_chains % 2 == 1:
-                        chain_points = +CHAIN_POINTS
-                    else:
-                        chain_points = -CHAIN_POINTS
+                        chain_points = +self.CHAIN_POINTS
 
         if is_player1:
             return player1_score - player2_score + chain_points
         else:
             return player2_score - player1_score + chain_points
+
 
 class E3_CPU(AlphaBetaCPU):
     def evaluate_goodness(self, game, is_player1, player_1_stars):
         player1_score = len(np.argwhere(game.board_status == -4))
         player2_score = len(np.argwhere(game.board_status == +4))
 
-        completed_boxes = len(np.argwhere(abs(game.board_status) == 4))
-        number_of_boxes = (NUMBER_OF_DOTS - 1) * (NUMBER_OF_DOTS - 1)
-        last_move = (number_of_boxes - completed_boxes) == 0
-        winning_move = last_move and (((player1_score > player2_score) and is_player1) or (
-                (player2_score > player1_score) and not is_player1))
-        winning_move_score = (NUMBER_OF_DOTS * 3 if winning_move else 0)
 
         chain_points = 0
 
-        long_chains = find_long_chains(game.board_status, game.row_status, game.col_status)
-        even_points = sum(len(even_chain) for even_chain in long_chains[::2])
-        odd_points = sum(len(odd_chain) for odd_chain in long_chains[1::2])
-        number_of_long_chains = len(long_chains)
+        chains = sorted(find_chains(game.board_status, game.row_status, game.col_status), key=len)
+        even_points = sum(len(even_chain) for even_chain in chains[::2])
+        odd_points = sum(len(odd_chain) for odd_chain in chains[1::2])
+        number_of_long_chains = len(chains)
 
-        if game.is_end_game() and check_no_plus_minus_4(game.board_status):
-
+        if check_no_4(game.board_status):
             if NUMBER_OF_DOTS % 2 == 1:
                 if (is_player1 and player_1_stars) or (not is_player1 and not player_1_stars):
-                    if number_of_long_chains % 2 == 1:
-                        chain_points = +odd_points - even_points
-                    else:
-                        chain_points = -odd_points + even_points
+                    chain_points = +odd_points - even_points
                 else:
-                    if number_of_long_chains % 2 == 0:
-                        chain_points = +even_points - odd_points
-                    else:
-                        chain_points = -even_points + odd_points
+                    chain_points = -odd_points + even_points
             else:
                 if (is_player1 and player_1_stars) or (not is_player1 and not player_1_stars):
-                    if number_of_long_chains % 2 == 0:
-                        chain_points = +odd_points - even_points
-                    else:
-                        chain_points = -odd_points + even_points
+                    chain_points = -odd_points + even_points
                 else:
-                    if number_of_long_chains % 2 == 1:
-                        chain_points = +even_points - odd_points
-                    else:
-                        chain_points = -even_points + odd_points
+                    chain_points = +odd_points - even_points
+
+            return chain_points
 
         if is_player1:
-            return player1_score - player2_score + chain_points
+            return player1_score - player2_score
         else:
-            return player2_score - player1_score + chain_points
-
+            return player2_score - player1_score
 
 
 class Dots_and_Boxes:
@@ -296,6 +290,7 @@ class Dots_and_Boxes:
     def __init__(self, cpu1: Optional[CPU] = None, cpu2: Optional[CPU] = None, play=True, already_marked_boxes=None,
                  reset_board=None, player1_turn=None, pointsScored=None, col_status=None, row_status=None,
                  board_status=None, turntext_handle=None):
+        self.start = None
         self.already_marked_boxes = already_marked_boxes
         self.reset_board = reset_board
         self.player1_turn = player1_turn
@@ -433,6 +428,7 @@ class Dots_and_Boxes:
                 self.board_status[y][x - 1] = (abs(self.board_status[y][x - 1]) + val) * playerModifier
                 if abs(self.board_status[y][x - 1]) == 4:
                     self.pointScored()
+
         return self.player1_turn, self.pointsScored
 
     def is_gameover(self):
@@ -460,6 +456,9 @@ class Dots_and_Boxes:
         else:
             color = P2_COLOR
         self.canvas.create_line(start_x, start_y, end_x, end_y, fill=color, width=EDGE_WIDTH)
+
+        if self.player1_turn:
+            print(time.time() - self.start)
 
     def display_gameover(self):
         player1_score = len(np.argwhere(self.board_status == -4))
@@ -496,8 +495,6 @@ class Dots_and_Boxes:
         score_text = 'Click to play again \n'
         self.canvas.create_text(BOARD_SIZE / 2, 15 * BOARD_SIZE / 16, font="cmr 20 bold", fill="gray",
                                 text=score_text)
-
-        self.play_again()
 
     def refresh_board(self):
         for i in range(NUMBER_OF_DOTS):
@@ -579,16 +576,20 @@ class Dots_and_Boxes:
             if self.is_gameover():
                 self.display_gameover()
                 self.window.bind(LEFT_CLICK, self.click)
+                if loop:
+                    self.play_again()
             else:
                 self.display_turn_text()
                 self.turn()
 
     def turn(self):
+        self.start = time.time()
         current_cpu = self.cpu1 if self.player1_turn else self.cpu2
         if current_cpu is None:
             self.window.bind(LEFT_CLICK, self.click)
         else:
             self.window.after(CPU_DELAY_MS, self.cpu_turn, current_cpu)
+
 
     def cpu_turn(self, cpu: CPU):
         is_player1 = (cpu == self.cpu1)
