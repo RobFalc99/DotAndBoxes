@@ -1,7 +1,6 @@
 from Dots_and_Boxes import *
 from RandomCPU import RandomCPU
 
-
 if __name__ == "__main__":
     """
     Change game_instance initialization below to change game mode
@@ -9,5 +8,5 @@ if __name__ == "__main__":
     PvB mode: game_instance = Dots_and_Boxes(None, cpuName()) or game_instance = Dots_and_Boxes(cpuName(), None)
     BvB mode: game_instance = Dots_and_Boxes(cpuName(), cpuName())
     """
-    game_instance = Dots_and_Boxes(E1_CPU(4), E3_CPU(4))
+    game_instance = Dots_and_Boxes(E1_CPU(3), E3_CPU(3))
     game_instance.mainloop()

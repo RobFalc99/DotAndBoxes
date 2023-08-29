@@ -1,6 +1,7 @@
 from typing import NamedTuple
 from numpy import ndarray
 
+
 class GameState(NamedTuple):
     """
     board_status: int[][]

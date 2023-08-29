@@ -6,6 +6,7 @@ class CPU:
     """
     An interface for CPU player.
     """
+
     def get_action(self, game: Dots_and_Boxes) -> GameAction:
         """
         Returns action based on state.

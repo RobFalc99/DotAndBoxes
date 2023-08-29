@@ -6,14 +6,12 @@ from typing import Optional
 from random import shuffle
 import time
 
-from time import sleep
-
 from GameState import GameState
 import numpy as np
 from GameAction import GameAction
 
 loop = True
-NUMBER_OF_DOTS = 4
+NUMBER_OF_DOTS = 8
 CPU_DELAY_MS = 1
 
 BOARD_SIZE = 600
@@ -35,6 +33,17 @@ start = time.time()
 
 
 def get_valid_neighbors(cell, board, rows, cols):
+    """
+    It returns all valid cells around the passed one
+    (a cell is considered valid only if it hasn't been completed and isn't
+    separated by a line from the passed cell)
+
+    :param cell: The cell of which find valid neighbors
+    :param board: The game board
+    :param rows: The game line rows
+    :param cols: The game line cols
+    :return: A list containing all valid neighbors cells
+    """
     x, y = cell
     neighbors = []
     if abs(board[x][y]) == 4:
@@ -51,6 +60,16 @@ def get_valid_neighbors(cell, board, rows, cols):
 
 
 def dfs(cell, board, rows, cols, visited, chain):
+    """
+    It applies a depth first search from a desired cell to find all possible chains
+
+    :param cell: The starting cell
+    :param board: The game board
+    :param rows: The game line rows
+    :param cols: The game line cols
+    :param visited: A list of all visited cells
+    :param chain: A list which contains the founded chain
+    """
     visited.add(cell)
     chain.append(cell)
 
@@ -70,6 +89,14 @@ def dfs(cell, board, rows, cols, visited, chain):
 
 
 def find_chains(board, rows, cols):
+    """
+    It finds all possible chains on the board
+
+    :param board: The game board
+    :param rows: The game line rows
+    :param cols: The game line cols
+    :return: The list of all possible chains on the board
+    """
     chains = []
     visited = set()
 
@@ -85,21 +112,42 @@ def find_chains(board, rows, cols):
 
 
 def find_long_chains(board, rows, cols):
+    """
+    It finds all possible long chains on the board
+    (a long chain is a chain containing at least 3 cells)
+
+    :param board: The game board
+    :param rows: The game line rows
+    :param cols: The game line cols
+    :return: The list of all possible long chains on the board
+    """
     return sorted([lst for lst in find_chains(board, rows, cols) if len(lst) > 3], key=len, reverse=True)
 
 
-def check_single_4(matrix):
+def check_single_4(board):
+    """
+    It checks if there is only one completed cell (obtained by a player)
+
+    :param board: The game board
+    :return: True: only one cell has been completed; False: otherwise
+    """
     count = 0
-    for row in matrix:
+    for row in board:
         for value in row:
             if abs(value) == 4:
                 count += 1
     return count == 1
 
 
-def check_no_4(matrix):
+def check_no_4(board):
+    """
+    It checks if there aren't any completed cell (obtained by a player)
+
+    :param board: The game board
+    :return: True: only no cells has been completed; False: otherwise
+    """
     count = 0
-    for row in matrix:
+    for row in board:
         for value in row:
             if abs(value) == 4:
                 count += 1
@@ -109,6 +157,14 @@ def check_no_4(matrix):
 class CPU:
 
     def get_action(self, game, is_player1, player_1_stars) -> GameAction:
+        """
+        It chooses a move from all available ones
+
+        :param game: The Dot and Boxes match instance
+        :param is_player1: Is the player1 the one making the move
+        :param player_1_stars: Is the player1 the one making the first move
+        :return: The chosen move
+        """
         raise NotImplementedError()
 
 
@@ -118,6 +174,11 @@ class AlphaBetaCPU(CPU):
         self.MAX_DEPTH = max_depth
 
     def get_valid_moves(self, game):
+        """
+        It finds all valid moves on the board
+        :param game: The Dot and Boxes match instance
+        :return: A list containing all the possible moves on the board
+        """
         state = game.get_game_state()
 
         valid_rows_moves = []
@@ -136,15 +197,42 @@ class AlphaBetaCPU(CPU):
         return l
 
     def get_action(self, game, is_player1, player_1_stars) -> GameAction:
+        """
+        It chooses a move from all available ones
+
+        :param game: The Dot and Boxes match instance
+        :param is_player1: Is the player1 the one making the move
+        :param player_1_stars: Is the player1 the one making the first move
+        :return: The chosen move
+        """
         game_copy = game
         move = self.alphabeta(game_copy, is_player1, player_1_stars)[0]
         return move
 
     def evaluate_goodness(self, game, is_player1, player_1_stars):
+        """
+        Evaluate how good is the board setting for a player
+
+        :param game: The Dot and Boxes match instance
+        :param is_player1: Is the player1 the one making the move
+        :param player_1_stars: Is the player1 the one making the first move
+        :return: A score representing how good the board setting is for a player
+        """
         raise NotImplementedError()
 
     def alphabeta(self, game, is_player1=False, player_1_stars=True, depth=None, alpha=-inf, beta=inf, is_max=True,
                   move=GameAction("row", (0, 0))):
+        """
+        It runs the alphabeta algorithm to find the best move possible
+        :param game: The Dot and Boxes match instance
+        :param is_player1: Is the player1 the one making the move
+        :param player_1_stars: Is the player1 the one making the first move
+        :param depth: Moves tree's current depth
+        :param alpha: Alpha parameter
+        :param beta: Beta parameter
+        :param is_max: If the algorithm must be run in max mode or min one
+        :return: The chosen move (best of worse)
+        """
         children = self.get_valid_moves(game)
 
         if depth is None:
@@ -190,6 +278,14 @@ class AlphaBetaCPU(CPU):
 class E1_CPU(AlphaBetaCPU):
 
     def evaluate_goodness(self, game, is_player1, player_1_stars):
+        """
+        Evaluate the goodness of a board setting as the difference between a player and his enemy
+
+        :param game: The Dot and Boxes match instance
+        :param is_player1: Is the player1 the one making the move
+        :param player_1_stars: Is the player1 the one making the first move
+        :return: A score representing how good the board setting is for a player
+        """
         player1_score = len(np.argwhere(game.board_status == -4))
         player2_score = len(np.argwhere(game.board_status == +4))
 
@@ -206,6 +302,15 @@ class E2_CPU(AlphaBetaCPU):
         self.CHAIN_POINTS = chain_points * (NUMBER_OF_DOTS - 1) * (NUMBER_OF_DOTS - 1)
 
     def evaluate_goodness(self, game, is_player1, player_1_stars):
+        """
+        Evaluate the goodness of a board setting as the difference between a player and his enemy, adding
+        a price for building the correct number of long chains according to the long chain rule
+
+        :param game: The Dot and Boxes match instance
+        :param is_player1: Is the player1 the one making the move
+        :param player_1_stars: Is the player1 the one making the first move
+        :return: A score representing how good the board setting is for a player
+        """
         player1_score = len(np.argwhere(game.board_status == -4))
         player2_score = len(np.argwhere(game.board_status == +4))
 
@@ -240,6 +345,15 @@ class E2_CPU(AlphaBetaCPU):
 
 class E3_CPU(AlphaBetaCPU):
     def evaluate_goodness(self, game, is_player1, player_1_stars):
+        """
+        Evaluate the goodness of a board setting as the difference between a player and his enemy, adding
+        the predicted scores according to which chains the player and his enemy are going to conquer
+
+        :param game: The Dot and Boxes match instance
+        :param is_player1: Is the player1 the one making the move
+        :param player_1_stars: Is the player1 the one making the first move
+        :return: A score representing how good the board setting is for a player
+        """
         player1_score = len(np.argwhere(game.board_status == -4))
         player2_score = len(np.argwhere(game.board_status == +4))
 
@@ -250,16 +364,10 @@ class E3_CPU(AlphaBetaCPU):
         odd_points = sum(len(odd_chain) for odd_chain in chains[1::2])
 
         if game.is_end_game() and check_no_4(game.board_status):
-            if NUMBER_OF_DOTS % 2 == 1:
-                if (is_player1 and player_1_stars) or (not is_player1 and not player_1_stars):
-                    chain_points = +odd_points - even_points
-                else:
-                    chain_points = -odd_points + even_points
+            if (is_player1 and player_1_stars) or (not is_player1 and not player_1_stars):
+                chain_points = +odd_points - even_points
             else:
-                if (is_player1 and player_1_stars) or (not is_player1 and not player_1_stars):
-                    chain_points = -odd_points + even_points
-                else:
-                    chain_points = +odd_points - even_points
+                chain_points = -odd_points + even_points
 
         if is_player1:
             return player1_score - player2_score + chain_points
