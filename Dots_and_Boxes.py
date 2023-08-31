@@ -10,7 +10,7 @@ from GameState import GameState
 import numpy as np
 from GameAction import GameAction
 
-loop = True
+loop = False
 NUMBER_OF_DOTS = 8
 CPU_DELAY_MS = 1
 
@@ -551,21 +551,19 @@ class Dots_and_Boxes:
         player1_score = len(np.argwhere(self.board_status == -4))
         player2_score = len(np.argwhere(self.board_status == 4))
 
-        f = open("output.txt", "a")
         if player1_score > player2_score:
             # Player 1 wins
             text = 'Player 1 wins'
-            print(1, file=f)
+            print(1)
             color = P1_COLOR
         elif player2_score > player1_score:
             text = 'Player 2 wins'
-            print(2, file=f)
+            print(2)
             color = P2_COLOR
         else:
             text = 'Its a tie'
-            print('X', file=f)
+            print('X')
             color = 'gray'
-        f.close()
 
         self.canvas.delete("all")
         self.canvas.create_text(BOARD_SIZE / 2, BOARD_SIZE / 3, font="cmr 60 bold", fill=color, text=text)
